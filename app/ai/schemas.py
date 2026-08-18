@@ -1,0 +1,55 @@
+"""JSON contracts for the interview model and the final TZ model (AI Specification v1.1, §13 and §27)."""
+
+from __future__ import annotations
+
+from typing import Literal, Optional
+
+from pydantic import BaseModel, Field
+
+
+class ProjectContext(BaseModel):
+    summary: str = ""
+    goal: list[str] = Field(default_factory=list)
+    users: list[str] = Field(default_factory=list)
+    features: list[str] = Field(default_factory=list)
+    scenarios: list[str] = Field(default_factory=list)
+    business_rules: list[str] = Field(default_factory=list)
+    integrations: list[str] = Field(default_factory=list)
+    data: list[str] = Field(default_factory=list)
+    roles: list[str] = Field(default_factory=list)
+    constraints: list[str] = Field(default_factory=list)
+    recommendations: list[str] = Field(default_factory=list)
+    to_clarify: list[str] = Field(default_factory=list)
+
+
+class QuestionInfo(BaseModel):
+    topic: str = ""
+    importance: Literal["critical", "useful", "optional"] = "useful"
+
+
+class InterviewMeta(BaseModel):
+    clarifying_questions_count: int = 0
+    add_information_count: int = 0
+
+
+class InterviewResult(BaseModel):
+    action: Literal["ask", "understanding", "wait_input", "error"]
+    language: str = "ru"
+    client_message: str
+    project_context: ProjectContext = Field(default_factory=ProjectContext)
+    question: Optional[QuestionInfo] = None
+    interview: InterviewMeta = Field(default_factory=InterviewMeta)
+
+
+class FinalTZResult(BaseModel):
+    project_title: str
+    client_understanding: str
+    technical_specification_markdown: str
+    to_clarify: list[str] = Field(default_factory=list)
+    recommendations: list[str] = Field(default_factory=list)
+    technical_stack: list[str] = Field(default_factory=list)
+    paid_dependencies: list[str] = Field(default_factory=list)
+
+
+class DeadlineParseResult(BaseModel):
+    deadline_text: str
