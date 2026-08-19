@@ -5,12 +5,18 @@ from __future__ import annotations
 
 from aiogram import Bot, F, Router
 from aiogram.filters import Command
-from aiogram.types import BufferedInputFile, CallbackQuery, Message
+from aiogram.types import BufferedInputFile, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from app.bot import keyboards
-from app.bot.texts import ADMIN_MESSAGE_PREFIX
+from app.bot.texts import ADMIN_MESSAGE_PREFIX, REVISION_DONE_TO_CLIENT
 from app.constants import (
     ADMIN_MESSAGE_ADMIN_TO_CLIENT,
+    REVISION_STATUS_DONE,
+    REVISION_STATUS_EMOJI,
+    REVISION_STATUS_IN_PROGRESS,
+    REVISION_STATUS_LABELS_RU,
+    REVISION_STATUS_NEW,
+    REVISION_STATUS_VIEWED,
     STATUS_COMPLETED,
     STATUS_EMOJI,
     STATUS_IN_PROGRESS,
@@ -35,6 +41,10 @@ def _client_label(row: dict) -> str:
     if row.get("username"):
         return f"@{row['username']}"
     return row.get("first_name") or f"id{row.get('telegram_id')}"
+
+
+def _revision_status_label(status: str) -> str:
+    return f"{REVISION_STATUS_EMOJI.get(status, '')} {REVISION_STATUS_LABELS_RU.get(status, status)}"
 
 
 async def send_admin_menu(message: Message, repo: Repo) -> None:
@@ -79,8 +89,6 @@ async def handle_admin_pending_text(message: Message, repo: Repo, bot: Bot) -> N
 # --- Applications list ---
 
 async def _render_application_list(callback: CallbackQuery, repo: Repo, status: str | None) -> None:
-    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-
     apps = await repo.applications.list_by_status(status, limit=20)
     title = f"Заявки: {_status_label(status)}" if status else "Все заявки"
     if not apps:
@@ -176,8 +184,6 @@ async def cb_admin_blocked(callback: CallbackQuery, is_admin: bool, repo: Repo) 
         await callback.answer()
         return
 
-    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-
     rows = [[InlineKeyboardButton(text=_client_label(u), callback_data=f"adm:client:{u['id']}")] for u in blocked]
     rows.append([InlineKeyboardButton(text="« Меню", callback_data=keyboards.CB_ADMIN_MENU)])
     await callback.message.edit_text("🚫 Заблокированные клиенты:", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
@@ -190,8 +196,6 @@ async def cb_admin_clients(callback: CallbackQuery, is_admin: bool, repo: Repo) 
         await callback.answer()
         return
     clients = await repo.users.list_clients(limit=30)
-
-    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
     rows = [
         [InlineKeyboardButton(
@@ -267,6 +271,20 @@ async def _open_application_card(target, application_id: int, repo: Repo, bot: B
                 await bot.send_photo(chat_id, a["telegram_file_id"])
         if len(att_lines) > 1:
             await bot.send_message(chat_id, "\n".join(att_lines))
+
+    if application["status"] == STATUS_COMPLETED:
+        revisions = await repo.revisions.list_for_application(application_id)
+        if revisions:
+            rows = [
+                [InlineKeyboardButton(
+                    text=f"✏️ Правка #{r['id']} — {_revision_status_label(r['status'])}",
+                    callback_data=f"adm:rev:{r['id']}",
+                )]
+                for r in revisions
+            ]
+            await bot.send_message(
+                chat_id, "Правки по заявке:", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows)
+            )
 
 
 @router.callback_query(F.data.regexp(r"^adm:app:\d+$"))
@@ -465,3 +483,70 @@ async def cb_client_unblock(callback: CallbackQuery, is_admin: bool, repo: Repo)
     await repo.users.set_blocked(user_id, False)
     await _open_client_card(callback.message, user_id, repo)
     await callback.answer("Разблокирован")
+
+
+# --- Revisions (v1.2) ---
+
+async def _open_revision_card(target, revision_id: int, repo: Repo) -> None:
+    revision = await repo.revisions.get(revision_id)
+    if revision is None:
+        await target.answer("Правка не найдена.")
+        return
+
+    if revision["status"] == REVISION_STATUS_NEW:
+        await repo.revisions.update_status(revision_id, REVISION_STATUS_VIEWED)
+        revision["status"] = REVISION_STATUS_VIEWED
+
+    rank, total_open = await repo.revisions.get_numbering(revision["application_id"], revision_id)
+    lines = [
+        f"Заявка #{revision['application_id']} → Правка #{rank} из {total_open} открытых",
+        f"Статус: {_revision_status_label(revision['status'])}",
+        f"Создана: {revision['created_at']:%d.%m.%Y %H:%M}",
+        "",
+        "Как понял клиент (подтверждено):",
+        revision.get("client_understanding_text") or "—",
+        "",
+        "Для администратора:",
+        revision.get("ai_summary") or "—",
+    ]
+    await target.answer(
+        "\n".join(lines),
+        reply_markup=keyboards.admin_revision_card_keyboard(revision_id, revision["application_id"]),
+    )
+
+
+@router.callback_query(F.data.regexp(r"^adm:rev:\d+$"))
+async def cb_open_revision(callback: CallbackQuery, is_admin: bool, repo: Repo) -> None:
+    if not is_admin:
+        await callback.answer()
+        return
+    revision_id = int(callback.data.split(":")[2])
+    await _open_revision_card(callback.message, revision_id, repo)
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(r"^adm:rev:\d+:(viewed|progress|done)$"))
+async def cb_revision_status_action(callback: CallbackQuery, is_admin: bool, repo: Repo, bot: Bot) -> None:
+    if not is_admin:
+        await callback.answer()
+        return
+    _, _, rev_id_str, action = callback.data.split(":")
+    revision_id = int(rev_id_str)
+
+    status_map = {"viewed": REVISION_STATUS_VIEWED, "progress": REVISION_STATUS_IN_PROGRESS, "done": REVISION_STATUS_DONE}
+    new_status = status_map[action]
+    await repo.revisions.update_status(revision_id, new_status)
+
+    if new_status == REVISION_STATUS_DONE:
+        revision = await repo.revisions.get(revision_id)
+        client = await repo.users.get_client_card(revision["user_id"])
+        if client:
+            try:
+                await bot.send_message(
+                    client["telegram_id"], REVISION_DONE_TO_CLIENT.format(application_id=revision["application_id"])
+                )
+            except Exception:
+                pass
+
+    await _open_revision_card(callback.message, revision_id, repo)
+    await callback.answer("Статус обновлён")

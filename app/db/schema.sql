@@ -6,6 +6,11 @@ exception when duplicate_object then null;
 end $$;
 
 do $$ begin
+    create type revision_status as enum ('new','viewed','in_progress','done');
+exception when duplicate_object then null;
+end $$;
+
+do $$ begin
     create type application_state as enum (
         'idle','creating','waiting_initial_description','interview',
         'waiting_deadline','understanding','adding_information','waiting_confirmation',
@@ -113,3 +118,19 @@ create table if not exists events (
 );
 
 create index if not exists idx_events_type_created on events (event_type, created_at);
+
+-- v1.2: post-completion revisions (TZ p.67-68). Independent status from applications.status.
+create table if not exists revisions (
+    id bigserial primary key,
+    application_id bigint not null references applications(id) on delete cascade,
+    user_id bigint not null references users(id) on delete cascade,
+    raw_text text not null,
+    client_understanding_text text,
+    ai_summary text,
+    status revision_status not null default 'new',
+    created_at timestamptz not null default now(),
+    completed_at timestamptz
+);
+
+-- Mandatory per TZ p.68.8: hot path for counting open revisions / numbering.
+create index if not exists idx_revisions_application_status on revisions (application_id, status);

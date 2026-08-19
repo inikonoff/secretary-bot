@@ -66,3 +66,13 @@ HELP_FALLBACK = (
 )
 
 RATE_LIMITED_LOG_ONLY = "rate limit hit, message dropped before reaching LLM"
+
+# --- Revisions (v1.2, TZ p.67-68) ---
+
+REVISION_DESCRIBE_PROMPT = "Опишите, что нужно изменить, убрать или добавить — текстом или голосом."
+
+REVISION_NOT_AVAILABLE = "Эта заявка больше не доступна для правок."
+
+REVISION_SUBMITTED_TO_CLIENT = "Спасибо! Правка передана в работу."
+
+REVISION_DONE_TO_CLIENT = "Ваша правка по заявке #{application_id} выполнена."

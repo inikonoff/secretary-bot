@@ -5,6 +5,9 @@ CB_CANCEL_PREFIX = "cancel_app"
 CB_CONFIRM_OK_PREFIX = "confirm_ok"
 CB_ADD_INFO_PREFIX = "add_info"
 
+CB_REVISE_PREFIX = "revise"
+CB_REVISE_CONFIRM_PREFIX = "revise_ok"
+
 CB_ADMIN_MENU = "adm:menu"
 CB_ADMIN_NEW = "adm:new"
 CB_ADMIN_ALL = "adm:all"
@@ -45,6 +48,19 @@ def understanding_keyboard(application_id: int, can_add_info: bool) -> InlineKey
 def new_application_only_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="➕ Создать новую", callback_data=CB_CREATE_APPLICATION)],
+    ])
+
+
+def new_application_with_revision_keyboard(application_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="➕ Создать новую", callback_data=CB_CREATE_APPLICATION)],
+        [InlineKeyboardButton(text="✏️ Предложить правку", callback_data=f"{CB_REVISE_PREFIX}:{application_id}")],
+    ])
+
+
+def revision_confirm_keyboard(application_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Верно", callback_data=f"{CB_REVISE_CONFIRM_PREFIX}:{application_id}")],
     ])
 
 
@@ -117,6 +133,17 @@ def admin_confirm_block_keyboard(user_id: int, username: str) -> InlineKeyboardM
             InlineKeyboardButton(text="✅ Да, заблокировать", callback_data=f"{CB_ADMIN_CLIENT_PREFIX}:{user_id}:block_confirm"),
             InlineKeyboardButton(text="Отмена", callback_data=f"{CB_ADMIN_CLIENT_PREFIX}:{user_id}"),
         ],
+    ])
+
+
+def admin_revision_card_keyboard(revision_id: int, application_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="👀 Просмотрена", callback_data=f"adm:rev:{revision_id}:viewed"),
+            InlineKeyboardButton(text="🔧 В работу", callback_data=f"adm:rev:{revision_id}:progress"),
+        ],
+        [InlineKeyboardButton(text="✅ Готово", callback_data=f"adm:rev:{revision_id}:done")],
+        [InlineKeyboardButton(text="« Заявка", callback_data=f"{CB_ADMIN_APP_PREFIX}:{application_id}")],
     ])
 
 

@@ -53,3 +53,9 @@ class FinalTZResult(BaseModel):
 
 class DeadlineParseResult(BaseModel):
     deadline_text: str
+
+
+class RevisionResult(BaseModel):
+    language: str = "ru"
+    client_message: str
+    ai_summary: str

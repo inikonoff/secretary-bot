@@ -7,6 +7,7 @@ from aiogram.filters import CommandStart
 from aiogram.types import Message
 
 from app.bot import keyboards, texts
+from app.constants import STATUS_COMPLETED
 from app.db.repo import Repo
 
 router = Router(name="start")
@@ -40,9 +41,20 @@ async def cmd_start(message: Message, user: dict | None, is_admin: bool, repo: R
 
     finalized = await repo.applications.list_finalized_for_user(user["id"])
     if finalized:
-        await message.answer(
-            "С возвращением! Хотите оформить новую заявку?",
-            reply_markup=keyboards.new_application_only_keyboard(),
-        )
+        # Only the most recently completed application gets a revision button — there's no
+        # multi-application picker screen in this product (TZ p.64), so we keep the offer to
+        # the one application the client would reasonably mean "the one that's finished".
+        latest = finalized[0]
+        if latest["status"] == STATUS_COMPLETED:
+            await message.answer(
+                "С возвращением! Хотите оформить новую заявку, или предложить правку к заявке "
+                f"#{latest['id']}, которая уже выполнена?",
+                reply_markup=keyboards.new_application_with_revision_keyboard(latest["id"]),
+            )
+        else:
+            await message.answer(
+                "С возвращением! Хотите оформить новую заявку?",
+                reply_markup=keyboards.new_application_only_keyboard(),
+            )
     else:
         await message.answer(texts.GREETING, reply_markup=keyboards.create_application_keyboard())

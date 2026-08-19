@@ -24,6 +24,8 @@ from app.services.debounce import DebounceAggregator
 from app.services.locks import LockRegistry
 from app.services.rate_limiter import RateLimiter
 from app.services.reminders import reminder_loop
+from app.services.revision_drafts import RevisionDraftRegistry
+from app.services.revision_flow import RevisionFlowService
 from app.services.telegraph import ensure_help_page
 from app.services.tz_generator import TZGeneratorService
 
@@ -83,6 +85,7 @@ def build_app() -> web.Application:
         )
         flow = ApplicationFlowService(repo, orchestrator, settings)
         tz_generator = TZGeneratorService(repo, orchestrator)
+        revision_flow = RevisionFlowService(repo, orchestrator)
 
         dp["settings"] = settings
         dp["pool"] = pool
@@ -90,6 +93,8 @@ def build_app() -> web.Application:
         dp["orchestrator"] = orchestrator
         dp["flow"] = flow
         dp["tz_generator"] = tz_generator
+        dp["revision_flow"] = revision_flow
+        dp["revision_drafts"] = RevisionDraftRegistry()
         dp["debounce"] = DebounceAggregator(settings.debounce_seconds)
         dp["lock_registry"] = LockRegistry()
         dp["admin_id"] = settings.admin_id

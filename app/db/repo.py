@@ -426,6 +426,51 @@ class EventsRepo:
         )
 
 
+class RevisionsRepo:
+    """Post-completion revisions (TZ v1.1 p.67-68) — independent from the applications state machine."""
+
+    def __init__(self, pool: asyncpg.Pool):
+        self.pool = pool
+
+    async def create(
+        self, application_id: int, user_id: int, raw_text: str, client_understanding_text: str, ai_summary: str
+    ) -> dict:
+        row = await self.pool.fetchrow(
+            """
+            insert into revisions (application_id, user_id, raw_text, client_understanding_text, ai_summary, status)
+            values ($1, $2, $3, $4, $5, 'new')
+            returning *
+            """,
+            application_id, user_id, raw_text, client_understanding_text, ai_summary,
+        )
+        return _row(row)
+
+    async def get(self, revision_id: int) -> Optional[dict]:
+        row = await self.pool.fetchrow("select * from revisions where id = $1", revision_id)
+        return _row(row)
+
+    async def list_for_application(self, application_id: int) -> list[dict]:
+        rows = await self.pool.fetch(
+            "select * from revisions where application_id = $1 order by created_at asc", application_id
+        )
+        return [dict(r) for r in rows]
+
+    async def update_status(self, revision_id: int, status: str) -> None:
+        if status == "done":
+            await self.pool.execute(
+                "update revisions set status = $1, completed_at = now() where id = $2", status, revision_id
+            )
+        else:
+            await self.pool.execute("update revisions set status = $1 where id = $2", status, revision_id)
+
+    async def get_numbering(self, application_id: int, revision_id: int) -> tuple[int, int]:
+        """Returns (1-indexed creation-order position, count of currently open revisions) — TZ p.68.5."""
+        revisions = await self.list_for_application(application_id)
+        rank = next((i + 1 for i, r in enumerate(revisions) if r["id"] == revision_id), 0)
+        total_open = sum(1 for r in revisions if r["status"] != "done")
+        return rank, total_open
+
+
 class Repo:
     """Facade bundling all repositories, injected into handlers as a single dependency."""
 
@@ -439,3 +484,4 @@ class Repo:
         self.admin_notes = AdminNotesRepo(pool)
         self.admin_messages = AdminMessagesRepo(pool)
         self.events = EventsRepo(pool)
+        self.revisions = RevisionsRepo(pool)

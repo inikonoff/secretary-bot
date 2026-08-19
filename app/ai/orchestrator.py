@@ -10,7 +10,7 @@ from pydantic import BaseModel, ValidationError
 
 from app.ai.clients import ChatClient, GroqClient, LLMRequestError, OpenRouterClient
 from app.ai.prompts import build_repair_prompt
-from app.ai.schemas import DeadlineParseResult, FinalTZResult, InterviewResult
+from app.ai.schemas import DeadlineParseResult, FinalTZResult, InterviewResult, RevisionResult
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +81,12 @@ class AIOrchestrator:
 
     async def parse_deadline(self, system_prompt: str, user_prompt: str) -> tuple[DeadlineParseResult, bool]:
         result, used_fallback = await self._structured_call(system_prompt, user_prompt, DeadlineParseResult, True)
+        return result, used_fallback  # type: ignore[return-value]
+
+    async def process_revision(self, system_prompt: str, user_prompt: str) -> tuple[RevisionResult, bool]:
+        # Revisions use the lighter interview model (gpt-oss-20b), not the final-TZ model
+        # (AI Specification v1.1 §33.1) — single pass, no add-info cycle.
+        result, used_fallback = await self._structured_call(system_prompt, user_prompt, RevisionResult, True)
         return result, used_fallback  # type: ignore[return-value]
 
     async def transcribe_voice(self, audio_bytes: bytes, filename: str) -> str:

@@ -38,6 +38,26 @@ STATUS_LABELS_RU = {
     STATUS_REJECTED: "Отклонена",
 }
 
+# revisions.status — independent of applications.status (TZ v1.1 p.67-68.6)
+REVISION_STATUS_NEW = "new"
+REVISION_STATUS_VIEWED = "viewed"
+REVISION_STATUS_IN_PROGRESS = "in_progress"
+REVISION_STATUS_DONE = "done"
+
+REVISION_STATUS_EMOJI = {
+    REVISION_STATUS_NEW: "🆕",
+    REVISION_STATUS_VIEWED: "👀",
+    REVISION_STATUS_IN_PROGRESS: "🔧",
+    REVISION_STATUS_DONE: "✅",
+}
+
+REVISION_STATUS_LABELS_RU = {
+    REVISION_STATUS_NEW: "Новая",
+    REVISION_STATUS_VIEWED: "Просмотрена",
+    REVISION_STATUS_IN_PROGRESS: "В работе",
+    REVISION_STATUS_DONE: "Готово",
+}
+
 MESSAGE_SENDER_USER = "user"
 MESSAGE_SENDER_ASSISTANT = "assistant"
 MESSAGE_SENDER_SYSTEM = "system"
@@ -58,6 +78,7 @@ EVENT_FALLBACK_TRIGGERED = "fallback_triggered"
 EVENT_RATE_LIMIT_HIT = "rate_limit_hit"
 EVENT_POSSIBLE_ABUSE = "possible_abuse"
 EVENT_REMINDER_SENT = "reminder_sent"
+EVENT_REVISION_CREATED = "revision_created"
 
 AI_ACTION_ASK = "ask"
 AI_ACTION_UNDERSTANDING = "understanding"
