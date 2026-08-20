@@ -42,6 +42,11 @@ class Settings(BaseSettings):
     same_topic_abandon_threshold: int = 3
     incomplete_session_reminder_hours: float = 24.0
 
+    # Supabase free-tier pauses a project after ~7 days with no database activity.
+    # A periodic no-op query keeps it alive independently of how much real traffic
+    # the bot gets (same rationale/knob as the PixKeep bot's Supabase keep-alive).
+    supabase_keepalive_interval_seconds: float = 21600.0  # 6 hours
+
     log_level: str = "INFO"
 
     @property

@@ -26,6 +26,7 @@ from app.services.rate_limiter import RateLimiter
 from app.services.reminders import reminder_loop
 from app.services.revision_drafts import RevisionDraftRegistry
 from app.services.revision_flow import RevisionFlowService
+from app.services.supabase_keepalive import supabase_keepalive_loop
 from app.services.telegraph import ensure_help_page
 from app.services.tz_generator import TZGeneratorService
 
@@ -48,13 +49,17 @@ async def on_startup(bot: Bot, dp: Dispatcher) -> None:
     dp["reminder_task"] = asyncio.create_task(
         reminder_loop(bot, dp["repo"], settings.incomplete_session_reminder_hours)
     )
+    dp["supabase_keepalive_task"] = asyncio.create_task(
+        supabase_keepalive_loop(dp["pool"], settings.supabase_keepalive_interval_seconds)
+    )
     logger.info("Bot started, webhook set to %s", settings.webhook_url)
 
 
 async def on_shutdown(bot: Bot, dp: Dispatcher) -> None:
-    task = dp.get("reminder_task")
-    if task:
-        task.cancel()
+    for task_key in ("reminder_task", "supabase_keepalive_task"):
+        task = dp.get(task_key)
+        if task:
+            task.cancel()
     await dp["pool"].close()
     await bot.session.close()
 
