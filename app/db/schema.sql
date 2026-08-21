@@ -40,6 +40,7 @@ create table if not exists applications (
     project_context jsonb not null default '{}'::jsonb,
     deadline_text text,
     pending_understanding_message text,
+    last_cancel_message_id bigint,
     tz_markdown_path text,
     tz_markdown_content text,
     add_info_count int not null default 0,
@@ -56,6 +57,11 @@ create table if not exists applications (
 -- Mandatory per TZ p.59: hot path for checking an unfinished session on /new.
 create index if not exists idx_applications_user_state on applications (user_id, state);
 create index if not exists idx_applications_status on applications (status);
+
+-- Migration guard: CREATE TABLE IF NOT EXISTS above is a no-op on a database that
+-- already has this table from an earlier deploy, so new columns need an explicit
+-- ADD COLUMN IF NOT EXISTS too (schema.sql is re-applied idempotently on every startup).
+alter table applications add column if not exists last_cancel_message_id bigint;
 
 create table if not exists messages (
     id bigserial primary key,

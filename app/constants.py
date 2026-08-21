@@ -79,6 +79,7 @@ EVENT_RATE_LIMIT_HIT = "rate_limit_hit"
 EVENT_POSSIBLE_ABUSE = "possible_abuse"
 EVENT_REMINDER_SENT = "reminder_sent"
 EVENT_REVISION_CREATED = "revision_created"
+EVENT_OUT_OF_SCOPE = "out_of_scope"
 
 AI_ACTION_ASK = "ask"
 AI_ACTION_UNDERSTANDING = "understanding"

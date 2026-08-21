@@ -25,6 +25,7 @@ from app.ai.prompts import (
 from app.constants import (
     EVENT_FALLBACK_TRIGGERED,
     EVENT_LLM_ERROR,
+    EVENT_OUT_OF_SCOPE,
     EVENT_POSSIBLE_ABUSE,
     MESSAGE_SENDER_ASSISTANT,
     MESSAGE_TYPE_TEXT,
@@ -51,7 +52,7 @@ AI_ERROR_MESSAGE = (
 
 @dataclass
 class InterviewOutcome:
-    kind: Literal["ask", "ask_deadline", "understanding", "abandoned"]
+    kind: Literal["ask", "ask_deadline", "understanding", "abandoned", "out_of_scope"]
     message: str
     language: str | None = None
 
@@ -102,6 +103,13 @@ class ApplicationFlowService:
             application["id"], MESSAGE_SENDER_ASSISTANT, MESSAGE_TYPE_TEXT, result.client_message, result.language, None
         )
         await self.repo.users.set_language(application["user_id"], result.language)
+
+        if result.action == "out_of_scope":
+            await self.repo.applications.cancel(application["id"])
+            await self.repo.events.log(
+                EVENT_OUT_OF_SCOPE, application_id=application["id"], user_id=application["user_id"],
+            )
+            return InterviewOutcome(kind="out_of_scope", message=result.client_message, language=result.language)
 
         if result.action == "ask":
             topic = result.question.topic if result.question else None

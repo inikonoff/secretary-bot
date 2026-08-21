@@ -150,6 +150,11 @@ class ApplicationsRepo:
             deadline_text, application_id,
         )
 
+    async def set_last_cancel_message_id(self, application_id: int, message_id: int | None) -> None:
+        await self.pool.execute(
+            "update applications set last_cancel_message_id = $1 where id = $2", message_id, application_id
+        )
+
     async def set_pending_understanding_message(self, application_id: int, text: str | None) -> None:
         await self.pool.execute(
             "update applications set pending_understanding_message = $1, updated_at = now() where id = $2",

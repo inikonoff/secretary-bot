@@ -9,6 +9,7 @@ from aiogram.types import Message
 from app.bot import keyboards, texts
 from app.constants import STATUS_COMPLETED
 from app.db.repo import Repo
+from app.services.cancel_button import send_with_single_cancel_button
 
 router = Router(name="start")
 
@@ -33,9 +34,10 @@ async def cmd_start(message: Message, user: dict | None, is_admin: bool, repo: R
 
     incomplete = await repo.applications.get_incomplete_for_user(user["id"])
     if incomplete:
-        await message.answer(
+        await send_with_single_cancel_button(
+            message.bot, repo, incomplete, message.chat.id,
             "У вас есть незавершённая заявка. Вот на чём вы остановились:\n\n" + _incomplete_summary(incomplete),
-            reply_markup=keyboards.incomplete_session_keyboard(incomplete["id"]),
+            keyboards.incomplete_session_keyboard(incomplete["id"]),
         )
         return
 

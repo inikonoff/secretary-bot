@@ -27,6 +27,7 @@ from app.constants import (
 )
 from app.db.repo import Repo
 from app.services.application_flow import AI_ERROR_MESSAGE, ApplicationFlowService, InterviewOutcome
+from app.services.cancel_button import clear_cancel_button, send_with_single_cancel_button
 from app.services.debounce import DebounceAggregator
 from app.services.locks import LockRegistry
 
@@ -44,15 +45,20 @@ INPUT_ACCEPTING_STATES = {
 }
 
 
-async def _send_outcome(bot: Bot, chat_id: int, application: dict, outcome: InterviewOutcome, flow: ApplicationFlowService) -> None:
-    if outcome.kind == "abandoned":
+async def _send_outcome(
+    bot: Bot, repo: Repo, chat_id: int, application: dict, outcome: InterviewOutcome, flow: ApplicationFlowService
+) -> None:
+    if outcome.kind in ("abandoned", "out_of_scope"):
+        await clear_cancel_button(bot, repo, application, chat_id)
         await bot.send_message(chat_id, outcome.message)
     elif outcome.kind in ("ask", "ask_deadline"):
-        await bot.send_message(chat_id, outcome.message, reply_markup=keyboards.question_keyboard(application["id"]))
+        await send_with_single_cancel_button(
+            bot, repo, application, chat_id, outcome.message, keyboards.question_keyboard(application["id"])
+        )
     elif outcome.kind == "understanding":
-        await bot.send_message(
-            chat_id, outcome.message,
-            reply_markup=keyboards.understanding_keyboard(application["id"], flow.can_add_information(application)),
+        await send_with_single_cancel_button(
+            bot, repo, application, chat_id, outcome.message,
+            keyboards.understanding_keyboard(application["id"], flow.can_add_information(application)),
         )
 
 
@@ -94,7 +100,7 @@ async def _flush_interview(
             await repo.messages.set_language_for_ids(message_ids, outcome.language)
 
         application = await repo.applications.get(application_id)
-        await _send_outcome(bot, chat_id, application, outcome, flow)
+        await _send_outcome(bot, repo, chat_id, application, outcome, flow)
 
 
 async def _store_links(repo: Repo, application_id: int, text: str) -> None:
