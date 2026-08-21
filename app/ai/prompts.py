@@ -21,6 +21,14 @@ INTERVIEW_SYSTEM_PROMPT = """\
 Не задавай вопрос, если ответ не изменит понимание
 задачи или будущего технического решения.
 
+Уточняющих вопросов у тебя строго ограниченное количество за интервью
+(точная цифра и текущий счётчик приходят в каждом запросе). Это жёсткий
+лимит, а не ориентир: как только он исчерпан, ты обязан перейти к
+action=understanding в том же ответе, вне зависимости от того, насколько
+полной кажется картина. Оставшиеся неясности не блокируют переход —
+отметь их в project_context.to_clarify, администратор уточнит их с
+клиентом напрямую после подтверждения заявки.
+
 Если техническое решение можно выбрать самостоятельно,
 предложи его клиенту простыми словами.
 
@@ -210,6 +218,7 @@ def build_interview_user_prompt(
     clarifying_questions_count: int,
     add_information_count: int,
     is_add_information_round: bool,
+    max_clarifying_questions: int,
 ) -> str:
     history_lines = []
     for m in recent_messages:
@@ -217,22 +226,30 @@ def build_interview_user_prompt(
         history_lines.append(f"{role}: {m['raw_text']}")
     history_text = "\n".join(history_lines) if history_lines else "(пока пусто)"
 
+    at_hard_limit = clarifying_questions_count >= max_clarifying_questions
+
     return json.dumps(
         {
             "current_project_context": project_context,
             "recent_raw_messages": history_text,
             "latest_user_message": latest_user_message,
             "clarifying_questions_count_so_far": clarifying_questions_count,
+            "max_clarifying_questions": max_clarifying_questions,
             "add_information_count_so_far": add_information_count,
             "is_add_information_round": is_add_information_round,
             "instruction": (
-                "После примерно 3 уточняющих вопросов обязательно проверь, достаточно "
-                "ли информации для перехода к action=understanding, даже если остались "
-                "второстепенные неизвестные."
-                if clarifying_questions_count >= 3
+                f"Уточняющих вопросов уже задано {clarifying_questions_count} из "
+                f"максимум {max_clarifying_questions} — ЖЁСТКИЙ лимит, дальше спрашивать "
+                "нельзя. Ты ОБЯЗАН вернуть action=understanding в этом ответе, даже если "
+                "какие-то параметры так и остались неизвестны. Всё, что не выяснено, "
+                "занеси в project_context.to_clarify — это отметится в ТЗ как "
+                "'⚠ УТОЧНИТЬ У КЛИЕНТА', уточнение произойдёт напрямую с администратором "
+                "после подтверждения заявки. action=ask в этом ответе запрещён."
+                if at_hard_limit
                 else "Обнови project_context на основе latest_user_message и реши: "
                 "задать следующий вопрос (action=ask) или перейти к пониманию "
-                "(action=understanding)."
+                "(action=understanding). Учитывай, что уточняющих вопросов всего "
+                f"{max_clarifying_questions} — трать их только на действительно важные пробелы."
             ),
         },
         ensure_ascii=False,

@@ -23,6 +23,7 @@ from app.ai.prompts import (
     build_interview_user_prompt,
 )
 from app.constants import (
+    EVENT_CLARIFYING_LIMIT_ENFORCED,
     EVENT_FALLBACK_TRIGGERED,
     EVENT_LLM_ERROR,
     EVENT_OUT_OF_SCOPE,
@@ -81,6 +82,7 @@ class ApplicationFlowService:
             clarifying_questions_count=application["clarifying_questions_count"],
             add_information_count=application["add_info_count"],
             is_add_information_round=is_add_info_round,
+            max_clarifying_questions=self.settings.max_clarifying_questions,
         )
 
         try:
@@ -99,19 +101,37 @@ class ApplicationFlowService:
             )
 
         await self.repo.applications.update_project_context(application["id"], result.project_context.model_dump())
-        await self.repo.messages.add(
-            application["id"], MESSAGE_SENDER_ASSISTANT, MESSAGE_TYPE_TEXT, result.client_message, result.language, None
-        )
         await self.repo.users.set_language(application["user_id"], result.language)
 
-        if result.action == "out_of_scope":
+        # Hard cap enforcement (not just a prompt nudge — dialogs were running too long
+        # in practice): if the limit is already reached and the model still tries to ask
+        # another question, override it here rather than trust a repeat instruction.
+        at_hard_limit = application["clarifying_questions_count"] >= self.settings.max_clarifying_questions
+        action = result.action
+        client_message = result.client_message
+        if action == "ask" and at_hard_limit:
+            await self.repo.events.log(
+                EVENT_CLARIFYING_LIMIT_ENFORCED, application_id=application["id"], user_id=application["user_id"],
+                payload={"attempted_topic": result.question.topic if result.question else None},
+            )
+            action = "understanding"
+            client_message = (
+                "Вот как я понял вашу задачу на основе того, что вы рассказали:\n\n"
+                + (result.project_context.summary or "Собрал основную информацию по вашему запросу.")
+            )
+
+        await self.repo.messages.add(
+            application["id"], MESSAGE_SENDER_ASSISTANT, MESSAGE_TYPE_TEXT, client_message, result.language, None
+        )
+
+        if action == "out_of_scope":
             await self.repo.applications.cancel(application["id"])
             await self.repo.events.log(
                 EVENT_OUT_OF_SCOPE, application_id=application["id"], user_id=application["user_id"],
             )
-            return InterviewOutcome(kind="out_of_scope", message=result.client_message, language=result.language)
+            return InterviewOutcome(kind="out_of_scope", message=client_message, language=result.language)
 
-        if result.action == "ask":
+        if action == "ask":
             topic = result.question.topic if result.question else None
             prev_topic = application.get("current_question_topic")
             same_topic_retry_count = (application.get("same_topic_retry_count") or 0) + 1 if topic and topic == prev_topic else 0
@@ -128,19 +148,19 @@ class ApplicationFlowService:
 
             await self.repo.applications.increment_clarifying_questions_count(application["id"])
             await self.repo.applications.update_state(application["id"], STATE_INTERVIEW)
-            return InterviewOutcome(kind="ask", message=result.client_message, language=result.language)
+            return InterviewOutcome(kind="ask", message=client_message, language=result.language)
 
         # action in ("understanding", "wait_input", "error") — treat unknown/defensive actions as understanding
         await self.repo.applications.update_topic_tracking(application["id"], None, 0)
 
         if application.get("deadline_text") is None:
-            await self.repo.applications.set_pending_understanding_message(application["id"], result.client_message)
+            await self.repo.applications.set_pending_understanding_message(application["id"], client_message)
             await self.repo.applications.update_state(application["id"], STATE_WAITING_DEADLINE)
-            return InterviewOutcome(kind="ask_deadline", message=result.client_message, language=result.language)
+            return InterviewOutcome(kind="ask_deadline", message=client_message, language=result.language)
 
-        await self.repo.applications.update_client_understanding(application["id"], result.client_message)
+        await self.repo.applications.update_client_understanding(application["id"], client_message)
         await self.repo.applications.update_state(application["id"], STATE_WAITING_CONFIRMATION)
-        return InterviewOutcome(kind="understanding", message=result.client_message, language=result.language)
+        return InterviewOutcome(kind="understanding", message=client_message, language=result.language)
 
     async def process_initial_description(self, application: dict, text: str) -> InterviewOutcome:
         return await self._run_interview_and_apply(application, text, is_add_info_round=False)

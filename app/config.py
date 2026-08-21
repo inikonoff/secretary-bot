@@ -38,7 +38,10 @@ class Settings(BaseSettings):
     max_voice_seconds: int = 60
     max_file_mb: int = 5
     max_add_info_cycles: int = 3
-    clarifying_questions_soft_limit: int = 3
+    # Hard cap on adaptive interview questions, enforced in code (not just a prompt
+    # nudge) — once reached, the LLM is forced to action=understanding on its next
+    # turn regardless of what it thinks is still missing.
+    max_clarifying_questions: int = 3
     same_topic_abandon_threshold: int = 3
     incomplete_session_reminder_hours: float = 24.0
 
