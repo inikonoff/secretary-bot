@@ -110,8 +110,11 @@ class ApplicationsRepo:
         return _row(row)
 
     async def list_for_user(self, user_id: int) -> list[dict]:
+        # Admin-facing: an unconfirmed session "не считается полноценной заявкой" (TZ p.55)
+        # and must not show up here, even though it already exists as a DB row.
         rows = await self.pool.fetch(
-            "select * from applications where user_id = $1 order by created_at desc", user_id
+            "select * from applications where user_id = $1 and state = 'finalized' order by created_at desc",
+            user_id,
         )
         return [dict(r) for r in rows]
 
@@ -212,17 +215,19 @@ class ApplicationsRepo:
         )
 
     async def list_by_status(self, status: str | None, limit: int = 20, offset: int = 0) -> list[dict]:
+        # Same "not a real application until confirmed" rule as list_for_user above.
         if status:
             rows = await self.pool.fetch(
                 "select a.*, u.username, u.first_name, u.telegram_id from applications a "
                 "join users u on u.id = a.user_id "
-                "where a.status = $1 order by a.created_at desc limit $2 offset $3",
+                "where a.state = 'finalized' and a.status = $1 order by a.created_at desc limit $2 offset $3",
                 status, limit, offset,
             )
         else:
             rows = await self.pool.fetch(
                 "select a.*, u.username, u.first_name, u.telegram_id from applications a "
                 "join users u on u.id = a.user_id "
+                "where a.state = 'finalized' "
                 "order by a.created_at desc limit $1 offset $2",
                 limit, offset,
             )
@@ -251,16 +256,18 @@ class ApplicationsRepo:
         return [dict(r) for r in rows]
 
     async def stats_overall(self) -> dict:
+        # Same "not a real application until confirmed" rule — draft sessions must not
+        # inflate the admin's counters any more than they should appear in the lists above.
         row = await self.pool.fetchrow(
             """
             select
                 (select count(*) from users) as clients,
-                (select count(*) from applications) as applications,
-                (select count(*) from applications where status = 'new') as new,
-                (select count(*) from applications where status = 'viewed') as viewed,
-                (select count(*) from applications where status = 'in_progress') as in_progress,
-                (select count(*) from applications where status = 'completed') as completed,
-                (select count(*) from applications where status = 'rejected') as rejected,
+                (select count(*) from applications where state = 'finalized') as applications,
+                (select count(*) from applications where state = 'finalized' and status = 'new') as new,
+                (select count(*) from applications where state = 'finalized' and status = 'viewed') as viewed,
+                (select count(*) from applications where state = 'finalized' and status = 'in_progress') as in_progress,
+                (select count(*) from applications where state = 'finalized' and status = 'completed') as completed,
+                (select count(*) from applications where state = 'finalized' and status = 'rejected') as rejected,
                 (select count(*) from users where is_blocked = true) as blocked
             """
         )
@@ -272,8 +279,8 @@ class ApplicationsRepo:
             """
             select
                 (select count(*) from users where created_at >= $1) as new_clients,
-                (select count(*) from applications where created_at >= $1) as new_applications,
-                (select count(*) from applications where status = 'completed' and updated_at >= $1) as completed
+                (select count(*) from applications where state = 'finalized' and confirmed_at >= $1) as new_applications,
+                (select count(*) from applications where state = 'finalized' and status = 'completed' and updated_at >= $1) as completed
             """,
             since,
         )
