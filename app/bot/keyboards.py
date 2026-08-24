@@ -8,6 +8,13 @@ CB_ADD_INFO_PREFIX = "add_info"
 CB_REVISE_PREFIX = "revise"
 CB_REVISE_CONFIRM_PREFIX = "revise_ok"
 
+CB_DEADLINE_QUICK_PREFIX = "deadline_quick"
+DEADLINE_QUICK_REPLIES = {
+    "asap": ("🚀 Как можно быстрее", "как можно быстрее"),
+    "month": ("📅 В течение месяца", "в течение месяца"),
+    "none": ("🤷 Сроков нет", "сроков нет"),
+}
+
 CB_ADMIN_MENU = "adm:menu"
 CB_ADMIN_NEW = "adm:new"
 CB_ADMIN_ALL = "adm:all"
@@ -35,6 +42,15 @@ def question_keyboard(application_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="❌ Отменить", callback_data=f"{CB_CANCEL_PREFIX}:{application_id}")],
     ])
+
+
+def deadline_quick_reply_keyboard(application_id: int) -> InlineKeyboardMarkup:
+    rows = [
+        [InlineKeyboardButton(text=label, callback_data=f"{CB_DEADLINE_QUICK_PREFIX}:{application_id}:{code}")]
+        for code, (label, _) in DEADLINE_QUICK_REPLIES.items()
+    ]
+    rows.append([InlineKeyboardButton(text="❌ Отменить", callback_data=f"{CB_CANCEL_PREFIX}:{application_id}")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def understanding_keyboard(application_id: int, can_add_info: bool) -> InlineKeyboardMarkup:

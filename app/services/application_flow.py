@@ -50,6 +50,10 @@ AI_ERROR_MESSAGE = (
     "Пожалуйста, попробуйте ещё раз через пару минут."
 )
 
+DEADLINE_QUESTION_TEXT = (
+    "Когда вам желательно запустить решение? Выберите вариант ниже или напишите свой ответ."
+)
+
 
 @dataclass
 class InterviewOutcome:
@@ -154,9 +158,12 @@ class ApplicationFlowService:
         await self.repo.applications.update_topic_tracking(application["id"], None, 0)
 
         if application.get("deadline_text") is None:
+            # The understanding text is stashed for display right after the deadline
+            # answer (see process_deadline_answer) — what actually goes to the client
+            # *now* is the deadline question itself, not a preview of the understanding.
             await self.repo.applications.set_pending_understanding_message(application["id"], client_message)
             await self.repo.applications.update_state(application["id"], STATE_WAITING_DEADLINE)
-            return InterviewOutcome(kind="ask_deadline", message=client_message, language=result.language)
+            return InterviewOutcome(kind="ask_deadline", message=DEADLINE_QUESTION_TEXT, language=result.language)
 
         await self.repo.applications.update_client_understanding(application["id"], client_message)
         await self.repo.applications.update_state(application["id"], STATE_WAITING_CONFIRMATION)

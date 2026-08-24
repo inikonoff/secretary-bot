@@ -7,10 +7,11 @@ import logging
 import re
 
 from aiogram import Bot, F, Router
-from aiogram.types import Message
+from aiogram.types import CallbackQuery, Message
 
 from app.ai.orchestrator import AIOrchestrator, AIUnavailableError
 from app.bot import keyboards, texts
+from app.bot.keyboards import CB_DEADLINE_QUICK_PREFIX, DEADLINE_QUICK_REPLIES
 from app.constants import (
     ADMIN_MESSAGE_CLIENT_TO_ADMIN,
     ATTACHMENT_DOCUMENT,
@@ -51,9 +52,13 @@ async def _send_outcome(
     if outcome.kind in ("abandoned", "out_of_scope"):
         await clear_cancel_button(bot, repo, application, chat_id)
         await bot.send_message(chat_id, outcome.message)
-    elif outcome.kind in ("ask", "ask_deadline"):
+    elif outcome.kind == "ask":
         await send_with_single_cancel_button(
             bot, repo, application, chat_id, outcome.message, keyboards.question_keyboard(application["id"])
+        )
+    elif outcome.kind == "ask_deadline":
+        await send_with_single_cancel_button(
+            bot, repo, application, chat_id, outcome.message, keyboards.deadline_quick_reply_keyboard(application["id"])
         )
     elif outcome.kind == "understanding":
         await send_with_single_cancel_button(
@@ -120,6 +125,40 @@ async def _handle_no_active_application(message: Message, user: dict, repo: Repo
     client_label = f"@{user['username']}" if user.get("username") else f"id{user['id']}"
     await bot.send_message(admin_id, f"💬 Сообщение от {client_label} по заявке #{application['id']}:\n\n{text}")
     await message.answer(texts.CLIENT_MESSAGE_FORWARDED)
+
+
+@router.callback_query(F.data.startswith(f"{CB_DEADLINE_QUICK_PREFIX}:"))
+async def cb_deadline_quick_reply(
+    callback: CallbackQuery, user: dict | None, repo: Repo, flow: ApplicationFlowService, lock_registry: LockRegistry
+) -> None:
+    if user is None:
+        await callback.answer()
+        return
+
+    _, app_id_str, code = callback.data.split(":")
+    application_id = int(app_id_str)
+    reply = DEADLINE_QUICK_REPLIES.get(code)
+    if reply is None:
+        await callback.answer()
+        return
+    text = reply[1]
+
+    async with lock_registry.get(user["id"], application_id):
+        application = await repo.applications.get(application_id)
+        if application is None or application["user_id"] != user["id"] or application["state"] != STATE_WAITING_DEADLINE:
+            await callback.answer()
+            return
+
+        await callback.message.edit_reply_markup(reply_markup=None)
+        await repo.messages.add(application_id, MESSAGE_SENDER_USER, MESSAGE_TYPE_TEXT, text, None, None)
+
+        # process_deadline_answer never raises AIUnavailableError — a failed LLM
+        # parse just falls back to storing the raw quick-reply text (see application_flow.py).
+        outcome = await flow.process_deadline_answer(application, text)
+
+        await callback.answer()
+        application = await repo.applications.get(application_id)
+        await _send_outcome(callback.bot, repo, callback.message.chat.id, application, outcome, flow)
 
 
 @router.message(F.text & ~F.text.startswith("/"))
