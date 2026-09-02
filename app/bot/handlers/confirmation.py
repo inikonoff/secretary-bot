@@ -58,6 +58,7 @@ async def cb_confirm_ok(
     callback: CallbackQuery,
     user: dict | None,
     repo: Repo,
+    flow: ApplicationFlowService,
     lock_registry: LockRegistry,
     tz_generator: TZGeneratorService,
     bot: Bot,
@@ -83,9 +84,12 @@ async def cb_confirm_ok(
         except TZGenerationError:
             await repo.applications.update_state(application_id, STATE_WAITING_CONFIRMATION)
             application["last_cancel_message_id"] = None  # cleared above
+            # Must keep an actual "✅ Верно" button here — the message tells the client
+            # to press it again, and question_keyboard (cancel-only) left them stuck
+            # with no way to retry short of typing something that gets misrouted.
             await send_with_single_cancel_button(
                 callback.bot, repo, application, callback.message.chat.id, FINALIZATION_FAILED_MESSAGE,
-                keyboards.question_keyboard(application_id),
+                keyboards.understanding_keyboard(application_id, flow.can_add_information(application)),
             )
             return
 

@@ -36,13 +36,24 @@ _FORBIDDEN_CODE_FENCES = re.compile(
 
 _CYRILLIC = re.compile(r"[а-яА-ЯёЁ]")
 
+_NON_ALNUM = re.compile(r"[^0-9a-zа-яё]+")
+
+
+def _normalize(text: str) -> str:
+    # Section-title matching must survive harmless formatting drift from the model
+    # (a hyphen vs a space, "ИИ-функциональность" vs "ИИ функциональность", etc.) —
+    # stripping everything but letters/digits before comparing avoids flagging a
+    # section as "missing" when it's really just punctuated differently.
+    return _NON_ALNUM.sub("", text.lower())
+
 
 def check_tz_quality(result: FinalTZResult) -> list[str]:
     problems: list[str] = []
     md = result.technical_specification_markdown
+    normalized_md = _normalize(md)
 
     for title in REQUIRED_SECTION_TITLES:
-        if title.lower() not in md.lower():
+        if _normalize(title) not in normalized_md:
             problems.append(f"отсутствует раздел «{title}»")
 
     if len(_CYRILLIC.findall(md)) < 20:
