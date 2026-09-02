@@ -4,6 +4,7 @@ part of the AI-interview flow."""
 
 from __future__ import annotations
 
+import json
 import logging
 
 import httpx
@@ -47,30 +48,42 @@ HELP_PAGE_CONTENT: list[dict] = [
 
 
 async def ensure_help_page(existing_url: str) -> str:
+    """Never allowed to raise: this runs during bot startup, and Telegra.ph being
+    unreachable/erroring/returning an unexpected shape must not take the whole bot
+    down with it. On any failure, /help falls back to a plain-text message (see
+    app.bot.texts.HELP_FALLBACK) instead of a link — degraded, not broken."""
     if existing_url:
         return existing_url
 
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        account_resp = await client.post(
-            f"{TELEGRAPH_API}/createAccount",
-            data={"short_name": "SecretaryBot", "author_name": "Секретарь"},
-        )
-        account_resp.raise_for_status()
-        access_token = account_resp.json()["result"]["access_token"]
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            account_resp = await client.post(
+                f"{TELEGRAPH_API}/createAccount",
+                data={"short_name": "SecretaryBot", "author_name": "Секретарь"},
+            )
+            account_resp.raise_for_status()
+            account_data = account_resp.json()
+            if not account_data.get("ok"):
+                raise RuntimeError(f"Telegra.ph createAccount returned an error: {account_data}")
+            access_token = account_data["result"]["access_token"]
 
-        import json as _json
-
-        page_resp = await client.post(
-            f"{TELEGRAPH_API}/createPage",
-            data={
-                "access_token": access_token,
-                "title": HELP_PAGE_TITLE,
-                "author_name": "Секретарь",
-                "content": _json.dumps(HELP_PAGE_CONTENT),
-                "return_content": "false",
-            },
-        )
-        page_resp.raise_for_status()
-        url = page_resp.json()["result"]["url"]
-        logger.info("Created Telegra.ph help page: %s", url)
-        return url
+            page_resp = await client.post(
+                f"{TELEGRAPH_API}/createPage",
+                data={
+                    "access_token": access_token,
+                    "title": HELP_PAGE_TITLE,
+                    "author_name": "Секретарь",
+                    "content": json.dumps(HELP_PAGE_CONTENT),
+                    "return_content": "false",
+                },
+            )
+            page_resp.raise_for_status()
+            page_data = page_resp.json()
+            if not page_data.get("ok"):
+                raise RuntimeError(f"Telegra.ph createPage returned an error: {page_data}")
+            url = page_data["result"]["url"]
+            logger.info("Created Telegra.ph help page: %s", url)
+            return url
+    except Exception:
+        logger.exception("Failed to create the Telegra.ph help page — /help will use the fallback text instead")
+        return ""
