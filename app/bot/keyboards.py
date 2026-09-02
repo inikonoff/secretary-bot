@@ -21,6 +21,7 @@ CB_ADMIN_ALL = "adm:all"
 CB_ADMIN_CLIENTS = "adm:clients"
 CB_ADMIN_STATS = "adm:stats"
 CB_ADMIN_BLOCKED = "adm:blocked"
+CB_ADMIN_MODE = "adm:mode"
 CB_ADMIN_FILTER_PREFIX = "adm:filter"
 CB_ADMIN_APP_PREFIX = "adm:app"
 CB_ADMIN_CLIENT_PREFIX = "adm:client"
@@ -89,6 +90,7 @@ def admin_main_menu_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="👥 Клиенты", callback_data=CB_ADMIN_CLIENTS)],
         [InlineKeyboardButton(text="📊 Статистика", callback_data=CB_ADMIN_STATS)],
         [InlineKeyboardButton(text="🚫 Заблокированные", callback_data=CB_ADMIN_BLOCKED)],
+        [InlineKeyboardButton(text="🔀 Режим: User/Admin", callback_data=CB_ADMIN_MODE)],
     ])
 
 

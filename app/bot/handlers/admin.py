@@ -8,6 +8,7 @@ from aiogram.filters import Command
 from aiogram.types import BufferedInputFile, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from app.bot import keyboards
+from app.bot.handlers.admin_mode import mode_screen
 from app.bot.texts import ADMIN_MESSAGE_PREFIX, REVISION_DONE_TO_CLIENT
 from app.constants import (
     ADMIN_MESSAGE_ADMIN_TO_CLIENT,
@@ -26,6 +27,7 @@ from app.constants import (
     STATUS_VIEWED,
 )
 from app.db.repo import Repo
+from app.services.admin_mode import AdminModeRegistry
 
 router = Router(name="admin")
 
@@ -187,6 +189,16 @@ async def cb_admin_blocked(callback: CallbackQuery, is_admin: bool, repo: Repo) 
     rows = [[InlineKeyboardButton(text=_client_label(u), callback_data=f"adm:client:{u['id']}")] for u in blocked]
     rows.append([InlineKeyboardButton(text="« Меню", callback_data=keyboards.CB_ADMIN_MENU)])
     await callback.message.edit_text("🚫 Заблокированные клиенты:", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+    await callback.answer()
+
+
+@router.callback_query(F.data == keyboards.CB_ADMIN_MODE)
+async def cb_admin_mode(callback: CallbackQuery, is_admin: bool, admin_mode: AdminModeRegistry) -> None:
+    if not is_admin:
+        await callback.answer()
+        return
+    text, keyboard = mode_screen(admin_mode.get(callback.from_user.id))
+    await callback.message.edit_text(text, reply_markup=keyboard)
     await callback.answer()
 
 

@@ -19,6 +19,7 @@ from app.db.pool import create_pool
 from app.db.repo import Repo
 from app.db.schema_apply import apply_schema
 from app.logging_config import configure_logging
+from app.services.admin_mode import AdminModeRegistry
 from app.services.application_flow import ApplicationFlowService
 from app.services.debounce import DebounceAggregator
 from app.services.locks import LockRegistry
@@ -104,8 +105,10 @@ def build_app() -> web.Application:
         dp["lock_registry"] = LockRegistry()
         dp["admin_id"] = settings.admin_id
         dp["telegraph_help_url"] = settings.telegraph_help_url
+        admin_mode = AdminModeRegistry()
+        dp["admin_mode"] = admin_mode
 
-        dp.update.outer_middleware(UserContextMiddleware(repo, settings.admin_id))
+        dp.update.outer_middleware(UserContextMiddleware(repo, settings.admin_id, admin_mode))
         dp.message.outer_middleware(RateLimitMiddleware(repo, RateLimiter(settings.rate_limit_messages, settings.rate_limit_window_seconds)))
 
         await on_startup(bot, dp)

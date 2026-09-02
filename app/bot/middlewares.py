@@ -11,17 +11,27 @@ from aiogram.types import Message, TelegramObject
 
 from app.constants import EVENT_RATE_LIMIT_HIT
 from app.db.repo import Repo
+from app.services.admin_mode import USER_MODE, AdminModeRegistry
 from app.services.rate_limiter import RateLimiter
 
 logger = logging.getLogger(__name__)
 
 
 class UserContextMiddleware(BaseMiddleware):
-    """Upserts the Telegram user, drops updates from blocked users, injects `user` into data."""
+    """Upserts the Telegram user, drops updates from blocked users, injects `user` into data.
 
-    def __init__(self, repo: Repo, admin_id: int):
+    `is_admin` reflects the CURRENTLY SIMULATED role, not raw Telegram identity: while
+    the admin has switched themselves into User mode (see app/services/admin_mode.py),
+    this deliberately reports is_admin=False and populates `user` with their own upserted
+    row, so every existing is_admin-gated handler routes them through the real client
+    experience with zero changes. The `/mode` command itself bypasses this and checks the
+    raw Telegram ID instead, so switching back is never blocked by the simulated state.
+    """
+
+    def __init__(self, repo: Repo, admin_id: int, admin_mode: AdminModeRegistry):
         self._repo = repo
         self._admin_id = admin_id
+        self._admin_mode = admin_mode
 
     async def __call__(
         self,
@@ -33,7 +43,10 @@ class UserContextMiddleware(BaseMiddleware):
         if tg_user is None:
             return await handler(event, data)
 
-        if tg_user.id == self._admin_id:
+        is_real_admin = tg_user.id == self._admin_id
+        simulating_user = is_real_admin and self._admin_mode.get(tg_user.id) == USER_MODE
+
+        if is_real_admin and not simulating_user:
             data["is_admin"] = True
             data["user"] = None
             return await handler(event, data)
