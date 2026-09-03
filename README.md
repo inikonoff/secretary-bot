@@ -10,7 +10,8 @@ Telegram-бот «Секретарь»: принимает клиента, пр�
 
 Python 3.12 · aiogram 3.x (webhook на aiohttp) · asyncpg + PostgreSQL (Supabase) ·
 Groq (`gpt-oss-20b` интервью / `gpt-oss-120b` финальное ТЗ, Whisper STT) ·
-OpenRouter как fallback-провайдер · Render.com (Web Service, free tier) · UptimeRobot.
+OpenRouter fallback (`gemma-4-31b-it:free` интервью / `minimax-m3:free` финальное ТЗ) ·
+Render.com (Web Service, free tier) · UptimeRobot.
 
 ## Архитектура
 
