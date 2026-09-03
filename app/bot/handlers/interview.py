@@ -11,7 +11,7 @@ from aiogram.types import CallbackQuery, Message
 
 from app.ai.orchestrator import AIOrchestrator, AIUnavailableError
 from app.bot import keyboards, texts
-from app.bot.keyboards import CB_DEADLINE_QUICK_PREFIX, DEADLINE_QUICK_REPLIES
+from app.bot.keyboards import CB_ALERT_BLOCK_PREFIX, CB_DEADLINE_QUICK_PREFIX, DEADLINE_QUICK_REPLIES
 from app.constants import (
     ADMIN_MESSAGE_CLIENT_TO_ADMIN,
     ATTACHMENT_DOCUMENT,
@@ -47,8 +47,22 @@ INPUT_ACCEPTING_STATES = {
 
 
 async def _send_outcome(
-    bot: Bot, repo: Repo, chat_id: int, application: dict, outcome: InterviewOutcome, flow: ApplicationFlowService
+    bot: Bot, repo: Repo, chat_id: int, application: dict, outcome: InterviewOutcome, flow: ApplicationFlowService,
+    admin_id: int | None = None,
 ) -> None:
+    if outcome.kind == "refused":
+        await clear_cancel_button(bot, repo, application, chat_id)
+        await bot.send_message(chat_id, outcome.message)
+        if admin_id:
+            await bot.send_message(
+                admin_id,
+                "🚩 Заявка автоматически отклонена интервью-ботом как потенциально "
+                f"незаконный/вредоносный запрос (заявка #{application['id']}, "
+                f"user_id {application['user_id']}). Переписка сохранена в БД (таблица "
+                "messages) — проверьте вручную при необходимости.",
+                reply_markup=keyboards.harmful_alert_keyboard(application["user_id"]),
+            )
+        return
     if outcome.kind in ("abandoned", "out_of_scope"):
         await clear_cancel_button(bot, repo, application, chat_id)
         await bot.send_message(chat_id, outcome.message)
@@ -76,6 +90,7 @@ async def _flush_interview(
     repo: Repo,
     flow: ApplicationFlowService,
     lock_registry: LockRegistry,
+    admin_id: int,
 ) -> None:
     async with lock_registry.get(user_id, application_id):
         application = await repo.applications.get(application_id)
@@ -105,7 +120,7 @@ async def _flush_interview(
             await repo.messages.set_language_for_ids(message_ids, outcome.language)
 
         application = await repo.applications.get(application_id)
-        await _send_outcome(bot, repo, chat_id, application, outcome, flow)
+        await _send_outcome(bot, repo, chat_id, application, outcome, flow, admin_id)
 
 
 async def _store_links(repo: Repo, application_id: int, text: str) -> None:
@@ -125,6 +140,40 @@ async def _handle_no_active_application(message: Message, user: dict, repo: Repo
     client_label = f"@{user['username']}" if user.get("username") else f"id{user['id']}"
     await bot.send_message(admin_id, f"💬 Сообщение от {client_label} по заявке #{application['id']}:\n\n{text}")
     await message.answer(texts.CLIENT_MESSAGE_FORWARDED)
+
+
+@router.callback_query(F.data.startswith(f"{CB_ALERT_BLOCK_PREFIX}:"))
+async def cb_alert_block(callback: CallbackQuery, repo: Repo, admin_id: int) -> None:
+    # Deliberately checks the RAW telegram_id, same as /mode (see admin_mode.py) — this
+    # button must keep working even while the admin is mid-test in simulated User mode,
+    # which is exactly when a harmful-request alert is most likely to arrive.
+    if callback.from_user.id != admin_id:
+        await callback.answer()
+        return
+
+    parts = callback.data.split(":")
+    user_id = int(parts[1])
+
+    if len(parts) == 2:
+        await callback.message.edit_reply_markup(reply_markup=keyboards.alert_block_confirm_keyboard(user_id))
+        await callback.answer()
+        return
+
+    if parts[2] == "confirm":
+        target = await repo.users.get_client_card(user_id)
+        if target and target["telegram_id"] == admin_id:
+            await callback.message.edit_reply_markup(reply_markup=None)
+            await callback.message.answer(
+                "Это твой собственный тестовый аккаунт (User mode) — блокировка на реального "
+                "админа не действует, так что блокировать его нет смысла."
+            )
+        else:
+            await repo.users.set_blocked(user_id, True)
+            await callback.message.edit_reply_markup(reply_markup=None)
+            await callback.message.answer(f"🚫 Пользователь id{user_id} заблокирован.")
+    else:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    await callback.answer()
 
 
 @router.callback_query(F.data.startswith(f"{CB_DEADLINE_QUICK_PREFIX}:"))
@@ -196,7 +245,7 @@ async def handle_text(
     stored = await repo.messages.add(application["id"], MESSAGE_SENDER_USER, MESSAGE_TYPE_TEXT, text, None, message.message_id)
 
     async def _flush(uid: int, payloads: list[tuple[str, int]]) -> None:
-        await _flush_interview(uid, payloads, application["id"], message.chat.id, bot, repo, flow, lock_registry)
+        await _flush_interview(uid, payloads, application["id"], message.chat.id, bot, repo, flow, lock_registry, admin_id)
 
     await debounce.add(user["id"], (text, stored["id"]), _flush)
 
@@ -248,7 +297,7 @@ async def handle_voice(
     await repo.voice_files.add(stored["id"], message.voice.file_id, message.voice.duration, None)
 
     async def _flush(uid: int, payloads: list[tuple[str, int]]) -> None:
-        await _flush_interview(uid, payloads, application["id"], message.chat.id, bot, repo, flow, lock_registry)
+        await _flush_interview(uid, payloads, application["id"], message.chat.id, bot, repo, flow, lock_registry, admin_id)
 
     await debounce.add(user["id"], (transcript, stored["id"]), _flush)
 
