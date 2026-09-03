@@ -21,8 +21,11 @@ class Settings(BaseSettings):
     groq_model_final: str = "openai/gpt-oss-120b"
     groq_whisper_model: str = "whisper-large-v3"
 
-    openrouter_model_interview: str = "openai/gpt-oss-20b:free"
-    openrouter_model_final: str = "openai/gpt-oss-120b"
+    # openai/gpt-oss-20b:free was withdrawn on OpenRouter (404).
+    # Interview: Gemma 4 31B follows json_object more reliably (no hidden CoT).
+    # Final TZ: MiniMax M3 — live :free, 1M context, stronger long-form generation.
+    openrouter_model_interview: str = "google/gemma-4-31b-it:free"
+    openrouter_model_final: str = "minimax/minimax-m3:free"
 
     webhook_base_url: str
     webhook_path: str = "/webhook"
