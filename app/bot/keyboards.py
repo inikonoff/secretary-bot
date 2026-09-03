@@ -26,6 +26,13 @@ CB_ADMIN_FILTER_PREFIX = "adm:filter"
 CB_ADMIN_APP_PREFIX = "adm:app"
 CB_ADMIN_CLIENT_PREFIX = "adm:client"
 
+# Standalone block button on the harmful-request alert (see app/bot/handlers/interview.py).
+# Deliberately its own callback prefix, gated on the raw admin telegram_id rather than
+# routed through the regular adm:client:*:block flow — that flow is gated on the
+# *simulated* is_admin flag, which is exactly False when this alert is most likely to
+# fire (admin mid-test in User mode via /mode). See admin_mode.py for the same pattern.
+CB_ALERT_BLOCK_PREFIX = "alert_block"
+
 
 def create_application_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -168,4 +175,21 @@ def admin_revision_card_keyboard(revision_id: int, application_id: int) -> Inlin
 def back_to_menu_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="« Меню", callback_data=CB_ADMIN_MENU)],
+    ])
+
+
+# --- Harmful-request alert (see app/bot/handlers/interview.py) ---
+
+def harmful_alert_keyboard(user_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🚫 Заблокировать", callback_data=f"{CB_ALERT_BLOCK_PREFIX}:{user_id}")],
+    ])
+
+
+def alert_block_confirm_keyboard(user_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="✅ Да, заблокировать", callback_data=f"{CB_ALERT_BLOCK_PREFIX}:{user_id}:confirm"),
+            InlineKeyboardButton(text="Отмена", callback_data=f"{CB_ALERT_BLOCK_PREFIX}:{user_id}:cancel"),
+        ],
     ])
