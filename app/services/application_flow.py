@@ -25,6 +25,7 @@ from app.ai.prompts import (
 from app.constants import (
     EVENT_CLARIFYING_LIMIT_ENFORCED,
     EVENT_FALLBACK_TRIGGERED,
+    EVENT_HARMFUL_REQUEST_BLOCKED,
     EVENT_LLM_ERROR,
     EVENT_OUT_OF_SCOPE,
     EVENT_POSSIBLE_ABUSE,
@@ -57,7 +58,7 @@ DEADLINE_QUESTION_TEXT = (
 
 @dataclass
 class InterviewOutcome:
-    kind: Literal["ask", "ask_deadline", "understanding", "abandoned", "out_of_scope"]
+    kind: Literal["ask", "ask_deadline", "understanding", "abandoned", "out_of_scope", "refused"]
     message: str
     language: str | None = None
 
@@ -127,6 +128,14 @@ class ApplicationFlowService:
         await self.repo.messages.add(
             application["id"], MESSAGE_SENDER_ASSISTANT, MESSAGE_TYPE_TEXT, client_message, result.language, None
         )
+
+        if action == "refused":
+            await self.repo.applications.set_flagged_abuse(application["id"])
+            await self.repo.applications.cancel(application["id"])
+            await self.repo.events.log(
+                EVENT_HARMFUL_REQUEST_BLOCKED, application_id=application["id"], user_id=application["user_id"],
+            )
+            return InterviewOutcome(kind="refused", message=client_message, language=result.language)
 
         if action == "out_of_scope":
             await self.repo.applications.cancel(application["id"])
