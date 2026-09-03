@@ -53,7 +53,11 @@ class UserContextMiddleware(BaseMiddleware):
 
         data["is_admin"] = False
         user = await self._repo.users.get_or_create(tg_user.id, tg_user.username, tg_user.first_name)
-        if user["is_blocked"]:
+        # The real admin is never actually locked out by is_blocked, even while
+        # simulating User mode: this middleware runs before any command routing
+        # (including /mode), so a silent drop here would strand them with no way
+        # back short of a redeploy. Blocking still "sticks" for every other user.
+        if user["is_blocked"] and not is_real_admin:
             return  # silently drop; TZ doesn't specify client-facing copy for blocked users
         data["user"] = user
         return await handler(event, data)
