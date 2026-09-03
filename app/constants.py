@@ -80,6 +80,7 @@ EVENT_POSSIBLE_ABUSE = "possible_abuse"
 EVENT_REMINDER_SENT = "reminder_sent"
 EVENT_REVISION_CREATED = "revision_created"
 EVENT_OUT_OF_SCOPE = "out_of_scope"
+EVENT_HARMFUL_REQUEST_BLOCKED = "harmful_request_blocked"
 EVENT_CLARIFYING_LIMIT_ENFORCED = "clarifying_limit_enforced"
 
 AI_ACTION_ASK = "ask"
