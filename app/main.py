@@ -8,6 +8,7 @@ import logging
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.types import BotCommand, BotCommandScopeChat, BotCommandScopeDefault
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiohttp import web
 
@@ -33,10 +34,31 @@ from app.services.tz_generator import TZGeneratorService
 
 logger = logging.getLogger(__name__)
 
+CLIENT_COMMANDS = [
+    BotCommand(command="start", description="Начать / статус заявки"),
+    BotCommand(command="new", description="Создать заявку"),
+    BotCommand(command="help", description="Как это работает"),
+]
+
+# Scoped to the admin's own chat via BotCommandScopeChat below — this list stays
+# visible in their ☰ menu regardless of AdminModeRegistry (see app/services/admin_mode.py):
+# Telegram resolves the menu by chat_id, not by our app's currently-simulated role,
+# so /mode is always reachable to switch back even while "logged in" as a test client.
+ADMIN_COMMANDS = CLIENT_COMMANDS + [
+    BotCommand(command="admin", description="Админ-панель"),
+    BotCommand(command="mode", description="Переключить Admin / User (тест)"),
+]
+
+
+async def _set_command_menus(bot: Bot, admin_id: int) -> None:
+    await bot.set_my_commands(CLIENT_COMMANDS, scope=BotCommandScopeDefault())
+    await bot.set_my_commands(ADMIN_COMMANDS, scope=BotCommandScopeChat(chat_id=admin_id))
+
 
 async def on_startup(bot: Bot, dp: Dispatcher) -> None:
     settings = dp["settings"]
     await apply_schema(dp["pool"])
+    await _set_command_menus(bot, settings.admin_id)
 
     help_url = await ensure_help_page(settings.telegraph_help_url)
     dp["telegraph_help_url"] = help_url
