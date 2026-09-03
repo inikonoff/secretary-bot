@@ -223,7 +223,15 @@ def _clip(text: str, limit: int) -> str:
 
 
 def compact_project_context(ctx: dict | None) -> dict:
-    src = ctx or {}
+    # Defensive: project_context should always arrive as a dict (see
+    # app/db/pool.py jsonb codec), but guard here too in case it's ever
+    # passed through as a raw JSON string or something unexpected.
+    if isinstance(ctx, str):
+        try:
+            ctx = json.loads(ctx)
+        except (json.JSONDecodeError, TypeError):
+            ctx = {}
+    src = ctx if isinstance(ctx, dict) else {}
     lists = (
         "goal",
         "users",
