@@ -33,7 +33,7 @@ class InterviewMeta(BaseModel):
 
 
 class InterviewResult(BaseModel):
-    action: Literal["ask", "understanding", "wait_input", "error", "out_of_scope"]
+    action: Literal["ask", "understanding", "wait_input", "error", "out_of_scope", "refused"]
     language: str = Field(default="ru", max_length=8)
     client_message: str = Field(max_length=1500)
     project_context: ProjectContext = Field(default_factory=ProjectContext)
