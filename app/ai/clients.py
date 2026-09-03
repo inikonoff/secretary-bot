@@ -26,22 +26,35 @@ def _raise_with_body(exc: httpx.HTTPStatusError, base_url: str) -> None:
 
 
 class ChatClient:
-    def __init__(self, base_url: str, api_key: str, timeout: float = 30.0):
+    def __init__(self, base_url: str, api_key: str, timeout: float = 60.0):
         self._base_url = base_url
         self._api_key = api_key
         self._timeout = timeout
 
-    async def chat_json(self, system_prompt: str, user_prompt: str, model: str, temperature: float = 0.3) -> str:
+    async def chat_json(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        model: str,
+        temperature: float = 0.3,
+        max_completion_tokens: int = 4096,
+    ) -> str:
         headers = {"Authorization": f"Bearer {self._api_key}", "Content-Type": "application/json"}
         payload = {
             "model": model,
             "temperature": temperature,
+            "max_completion_tokens": max_completion_tokens,
             "response_format": {"type": "json_object"},
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
         }
+        # gpt-oss spends the completion budget on hidden reasoning first; without
+        # a low effort setting JSON mode often dies with json_validate_failed.
+        if "gpt-oss" in model:
+            payload["reasoning_effort"] = "low"
+            payload["include_reasoning"] = False
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 resp = await client.post(f"{self._base_url}/chat/completions", headers=headers, json=payload)
@@ -53,13 +66,20 @@ class ChatClient:
 
         data = resp.json()
         try:
-            return data["choices"][0]["message"]["content"]
+            message = data["choices"][0]["message"]
+            content = message.get("content") or ""
+            if not content:
+                # Some reasoning models put the JSON only in `reasoning`.
+                content = message.get("reasoning") or ""
+            if not content:
+                raise LLMRequestError(f"empty LLM content: {data}")
+            return content
         except (KeyError, IndexError) as exc:
             raise LLMRequestError(f"unexpected response shape: {data}") from exc
 
 
 class GroqClient(ChatClient):
-    def __init__(self, api_key: str, timeout: float = 30.0):
+    def __init__(self, api_key: str, timeout: float = 60.0):
         super().__init__(GROQ_BASE_URL, api_key, timeout)
 
     async def transcribe(self, audio_bytes: bytes, filename: str, model: str) -> str:

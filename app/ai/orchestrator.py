@@ -39,25 +39,39 @@ class AIOrchestrator:
         self._openrouter_model_final = openrouter_model_final
 
     async def _call_with_repair(
-        self, client: ChatClient, model: str, system_prompt: str, user_prompt: str, schema: type[BaseModel]
+        self,
+        client: ChatClient,
+        model: str,
+        system_prompt: str,
+        user_prompt: str,
+        schema: type[BaseModel],
+        max_completion_tokens: int,
     ) -> BaseModel:
-        raw = await client.chat_json(system_prompt, user_prompt, model)
+        raw = await client.chat_json(
+            system_prompt, user_prompt, model, max_completion_tokens=max_completion_tokens
+        )
         try:
             return schema.model_validate(json.loads(raw))
         except (json.JSONDecodeError, ValidationError) as exc:
             repair_prompt = build_repair_prompt(raw, str(exc))
-            raw2 = await client.chat_json(system_prompt, repair_prompt, model)
+            raw2 = await client.chat_json(
+                system_prompt, repair_prompt, model, max_completion_tokens=max_completion_tokens
+            )
             return schema.model_validate(json.loads(raw2))
 
     async def _structured_call(
         self, system_prompt: str, user_prompt: str, schema: type[BaseModel], interview: bool
     ) -> tuple[BaseModel, bool]:
         groq_model = self._groq_model_interview if interview else self._groq_model_final
+        # Interview JSON is small; final TZ markdown needs a much larger budget.
+        max_completion_tokens = 4096 if interview else 12288
         try:
-            result = await self._call_with_repair(self._groq, groq_model, system_prompt, user_prompt, schema)
+            result = await self._call_with_repair(
+                self._groq, groq_model, system_prompt, user_prompt, schema, max_completion_tokens
+            )
             return result, False
-        except (LLMRequestError, json.JSONDecodeError, ValidationError) as exc:
-            logger.warning("Groq call failed (%s), falling back to OpenRouter", exc)
+        except (LLMRequestError, json.JSONDecodeError, ValidationError) as parse_exc:
+            logger.warning("Groq call failed (%s), falling back to OpenRouter", parse_exc)
 
         if self._openrouter is None:
             raise AIUnavailableError("Groq failed and no OpenRouter fallback is configured")
@@ -65,7 +79,7 @@ class AIOrchestrator:
         openrouter_model = self._openrouter_model_interview if interview else self._openrouter_model_final
         try:
             result = await self._call_with_repair(
-                self._openrouter, openrouter_model, system_prompt, user_prompt, schema
+                self._openrouter, openrouter_model, system_prompt, user_prompt, schema, max_completion_tokens
             )
             return result, True
         except (LLMRequestError, json.JSONDecodeError, ValidationError) as exc:

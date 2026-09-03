@@ -91,6 +91,10 @@ action="out_of_scope", а в client_message вежливо и коротко о�
 Правила заполнения project_context: копируй точные формулировки, цифры,
 названия сервисов из сообщений пользователя как есть, не пересказывай и не
 обобщай их (важно не потерять точное название CRM, числовой порог и т.п.).
+Пиши КОМПАКТНО: summary до 400 символов; каждый пункт списка — одна короткая
+фраза (до ~160 символов); не дублируй одно и то же в нескольких полях;
+пустые массивы оставляй пустыми []; client_message при action=ask — 1-3
+предложения, при understanding — 2-5 коротких пунктов. Не раздувай JSON.
 
 action="ask" — когда нужен ещё один уточняющий вопрос (заполни поле question).
 action="understanding" — когда информации достаточно, client_message содержит
@@ -203,12 +207,46 @@ REVISION_SYSTEM_PROMPT = """\
 def build_revision_user_prompt(project_context: dict, previous_revisions: list[dict], raw_text: str) -> str:
     return json.dumps(
         {
-            "original_project_context": project_context,
-            "previous_revisions": previous_revisions,
-            "new_revision_request": raw_text,
+            "original_project_context": compact_project_context(project_context),
+            "previous_revisions": previous_revisions[-8:],
+            "new_revision_request": _clip(raw_text, 800),
         },
         ensure_ascii=False,
     )
+
+
+def _clip(text: str, limit: int) -> str:
+    text = (text or "").strip()
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rstrip() + "…"
+
+
+def compact_project_context(ctx: dict | None) -> dict:
+    src = ctx or {}
+    lists = (
+        "goal",
+        "users",
+        "features",
+        "scenarios",
+        "business_rules",
+        "integrations",
+        "data",
+        "roles",
+        "constraints",
+        "recommendations",
+        "to_clarify",
+    )
+    out: dict = {"summary": _clip(str(src.get("summary") or ""), 800)}
+    for key in lists:
+        items = src.get(key) or []
+        cleaned: list[str] = []
+        for item in items:
+            s = _clip(str(item), 200)
+            if s:
+                cleaned.append(s)
+        out[key] = cleaned[:12]
+    return out
 
 
 def build_interview_user_prompt(
@@ -223,16 +261,16 @@ def build_interview_user_prompt(
     history_lines = []
     for m in recent_messages:
         role = "Клиент" if m["sender"] == "user" else "Ассистент"
-        history_lines.append(f"{role}: {m['raw_text']}")
-    history_text = "\n".join(history_lines) if history_lines else "(пока пусто)"
+        history_lines.append(f"{role}: {_clip(m.get('raw_text') or '', 400)}")
+    history_text = "\n".join(history_lines[-6:]) if history_lines else "(пока пусто)"
 
     at_hard_limit = clarifying_questions_count >= max_clarifying_questions
 
     return json.dumps(
         {
-            "current_project_context": project_context,
+            "current_project_context": compact_project_context(project_context),
             "recent_raw_messages": history_text,
-            "latest_user_message": latest_user_message,
+            "latest_user_message": _clip(latest_user_message, 800),
             "clarifying_questions_count_so_far": clarifying_questions_count,
             "max_clarifying_questions": max_clarifying_questions,
             "add_information_count_so_far": add_information_count,
@@ -265,13 +303,13 @@ def build_final_tz_user_prompt(
     history_lines = []
     for m in recent_messages:
         role = "Клиент" if m["sender"] == "user" else "Ассистент"
-        history_lines.append(f"{role}: {m['raw_text']}")
+        history_lines.append(f"{role}: {_clip(m.get('raw_text') or '', 400)}")
 
     return json.dumps(
         {
-            "client_understanding": client_understanding,
-            "project_context": project_context,
-            "history_excerpt": "\n".join(history_lines),
+            "client_understanding": _clip(client_understanding, 1500),
+            "project_context": compact_project_context(project_context),
+            "history_excerpt": "\n".join(history_lines[-12:]),
             "deadline_text": deadline_text or "не указан",
         },
         ensure_ascii=False,
@@ -282,7 +320,7 @@ def build_repair_prompt(previous_output: str, error: str) -> str:
     return (
         "Твой предыдущий ответ не прошёл валидацию.\n"
         f"Ошибка: {error}\n\n"
-        f"Твой предыдущий ответ:\n{previous_output}\n\n"
+        f"Твой предыдущий ответ:\n{_clip(previous_output, 2500)}\n\n"
         "Верни ИСПРАВЛЕННЫЙ ответ, строго тем же JSON-форматом, без markdown-разметки "
         "вокруг, без пояснений."
     )

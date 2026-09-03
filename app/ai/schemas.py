@@ -8,18 +8,18 @@ from pydantic import BaseModel, Field
 
 
 class ProjectContext(BaseModel):
-    summary: str = ""
-    goal: list[str] = Field(default_factory=list)
-    users: list[str] = Field(default_factory=list)
-    features: list[str] = Field(default_factory=list)
-    scenarios: list[str] = Field(default_factory=list)
-    business_rules: list[str] = Field(default_factory=list)
-    integrations: list[str] = Field(default_factory=list)
-    data: list[str] = Field(default_factory=list)
-    roles: list[str] = Field(default_factory=list)
-    constraints: list[str] = Field(default_factory=list)
-    recommendations: list[str] = Field(default_factory=list)
-    to_clarify: list[str] = Field(default_factory=list)
+    summary: str = Field(default="", max_length=800)
+    goal: list[str] = Field(default_factory=list, max_length=12)
+    users: list[str] = Field(default_factory=list, max_length=8)
+    features: list[str] = Field(default_factory=list, max_length=16)
+    scenarios: list[str] = Field(default_factory=list, max_length=8)
+    business_rules: list[str] = Field(default_factory=list, max_length=10)
+    integrations: list[str] = Field(default_factory=list, max_length=8)
+    data: list[str] = Field(default_factory=list, max_length=8)
+    roles: list[str] = Field(default_factory=list, max_length=8)
+    constraints: list[str] = Field(default_factory=list, max_length=8)
+    recommendations: list[str] = Field(default_factory=list, max_length=8)
+    to_clarify: list[str] = Field(default_factory=list, max_length=8)
 
 
 class QuestionInfo(BaseModel):
@@ -34,8 +34,8 @@ class InterviewMeta(BaseModel):
 
 class InterviewResult(BaseModel):
     action: Literal["ask", "understanding", "wait_input", "error", "out_of_scope"]
-    language: str = "ru"
-    client_message: str
+    language: str = Field(default="ru", max_length=8)
+    client_message: str = Field(max_length=1500)
     project_context: ProjectContext = Field(default_factory=ProjectContext)
     question: Optional[QuestionInfo] = None
     interview: InterviewMeta = Field(default_factory=InterviewMeta)
