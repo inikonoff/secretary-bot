@@ -223,15 +223,12 @@ async def cb_admin_clients(callback: CallbackQuery, is_admin: bool, repo: Repo) 
 
 # --- Application card ---
 
-async def _open_application_card(target, application_id: int, repo: Repo, bot: Bot) -> None:
+async def _build_application_card_text(application_id: int, repo: Repo) -> tuple[str, dict, InlineKeyboardMarkup | None]:
+    """Text + keyboard for an application card, with no side effects (no sends).
+    Returns (text, application, keyboard) — keyboard is None if the application no longer exists."""
     application = await repo.applications.get_with_client(application_id)
     if application is None:
-        await target.answer("Заявка не найдена.")
-        return
-
-    if application["status"] == STATUS_NEW:
-        await repo.applications.update_status(application_id, STATUS_VIEWED)
-        application["status"] = STATUS_VIEWED
+        return "Заявка не найдена.", {}, None
 
     notes = await repo.admin_notes.list_for_application(application_id)
     lines = [
@@ -251,9 +248,21 @@ async def _open_application_card(target, application_id: int, repo: Repo, bot: B
             lines.append(f"• {n['created_at']:%d.%m %H:%M} — {n['text']}")
 
     is_blocked = bool((await repo.users.get_client_card(application["user_id"]) or {}).get("is_blocked"))
-    await target.answer(
-        "\n".join(lines), reply_markup=keyboards.admin_application_card_keyboard(application_id, is_blocked)
-    )
+    keyboard = keyboards.admin_application_card_keyboard(application_id, is_blocked)
+    return "\n".join(lines), application, keyboard
+
+
+async def _open_application_card(target, application_id: int, repo: Repo, bot: Bot) -> None:
+    application = await repo.applications.get_with_client(application_id)
+    if application is None:
+        await target.answer("Заявка не найдена.")
+        return
+
+    if application["status"] == STATUS_NEW:
+        await repo.applications.update_status(application_id, STATUS_VIEWED)
+
+    text, application, keyboard = await _build_application_card_text(application_id, repo)
+    await target.answer(text, reply_markup=keyboard)
 
     chat_id = target.chat.id
 
@@ -322,7 +331,14 @@ async def cb_application_status_action(callback: CallbackQuery, is_admin: bool, 
     }
     await repo.applications.update_status(application_id, status_map[action])
     await repo.events.log("status_change", application_id=application_id, payload={"new_status": status_map[action]})
-    await _open_application_card(callback.message, application_id, repo, bot)
+
+    text, _application, keyboard = await _build_application_card_text(application_id, repo)
+    try:
+        await callback.message.edit_text(text, reply_markup=keyboard)
+    except Exception:
+        # e.g. message unchanged, or too old to edit — fall back to a fresh card
+        # rather than silently doing nothing.
+        await _open_application_card(callback.message, application_id, repo, bot)
     await callback.answer("Статус обновлён")
 
 
@@ -397,17 +413,20 @@ async def cb_application_unblock(callback: CallbackQuery, is_admin: bool, repo: 
         await callback.answer()
         return
     await repo.users.set_blocked(application["user_id"], False)
-    await _open_application_card(callback.message, application_id, repo, bot)
+    text, _application, keyboard = await _build_application_card_text(application_id, repo)
+    try:
+        await callback.message.edit_text(text, reply_markup=keyboard)
+    except Exception:
+        await _open_application_card(callback.message, application_id, repo, bot)
     await callback.answer("Разблокирован")
 
 
 # --- Client card ---
 
-async def _open_client_card(target, user_id: int, repo: Repo) -> None:
+async def _build_client_card_text(user_id: int, repo: Repo) -> tuple[str, dict | None, InlineKeyboardMarkup | None]:
     client = await repo.users.get_client_card(user_id)
     if client is None:
-        await target.answer("Клиент не найден.")
-        return
+        return "Клиент не найден.", None, None
     apps = await repo.applications.list_for_user(user_id)
 
     lines = [
@@ -425,7 +444,16 @@ async def _open_client_card(target, user_id: int, repo: Repo) -> None:
         for a in apps:
             lines.append(f"#{a['id']} {_status_label(a['status'])} — {a['created_at']:%d.%m.%Y}")
 
-    await target.answer("\n".join(lines), reply_markup=keyboards.admin_client_card_keyboard(user_id, client["is_blocked"]))
+    keyboard = keyboards.admin_client_card_keyboard(user_id, client["is_blocked"])
+    return "\n".join(lines), client, keyboard
+
+
+async def _open_client_card(target, user_id: int, repo: Repo) -> None:
+    text, client, keyboard = await _build_client_card_text(user_id, repo)
+    if client is None:
+        await target.answer(text)
+        return
+    await target.answer(text, reply_markup=keyboard)
 
 
 @router.callback_query(F.data.regexp(r"^adm:client:\d+$"))
@@ -482,7 +510,11 @@ async def cb_client_block_confirm(callback: CallbackQuery, is_admin: bool, repo:
         return
     user_id = int(callback.data.split(":")[2])
     await repo.users.set_blocked(user_id, True)
-    await _open_client_card(callback.message, user_id, repo)
+    text, _client, keyboard = await _build_client_card_text(user_id, repo)
+    try:
+        await callback.message.edit_text(text, reply_markup=keyboard)
+    except Exception:
+        await _open_client_card(callback.message, user_id, repo)
     await callback.answer("Заблокирован")
 
 
@@ -493,21 +525,20 @@ async def cb_client_unblock(callback: CallbackQuery, is_admin: bool, repo: Repo)
         return
     user_id = int(callback.data.split(":")[2])
     await repo.users.set_blocked(user_id, False)
-    await _open_client_card(callback.message, user_id, repo)
+    text, _client, keyboard = await _build_client_card_text(user_id, repo)
+    try:
+        await callback.message.edit_text(text, reply_markup=keyboard)
+    except Exception:
+        await _open_client_card(callback.message, user_id, repo)
     await callback.answer("Разблокирован")
 
 
 # --- Revisions (v1.2) ---
 
-async def _open_revision_card(target, revision_id: int, repo: Repo) -> None:
+async def _build_revision_card_text(revision_id: int, repo: Repo) -> tuple[str, dict | None, InlineKeyboardMarkup | None]:
     revision = await repo.revisions.get(revision_id)
     if revision is None:
-        await target.answer("Правка не найдена.")
-        return
-
-    if revision["status"] == REVISION_STATUS_NEW:
-        await repo.revisions.update_status(revision_id, REVISION_STATUS_VIEWED)
-        revision["status"] = REVISION_STATUS_VIEWED
+        return "Правка не найдена.", None, None
 
     rank, total_open = await repo.revisions.get_numbering(revision["application_id"], revision_id)
     lines = [
@@ -521,10 +552,21 @@ async def _open_revision_card(target, revision_id: int, repo: Repo) -> None:
         "Для администратора:",
         revision.get("ai_summary") or "—",
     ]
-    await target.answer(
-        "\n".join(lines),
-        reply_markup=keyboards.admin_revision_card_keyboard(revision_id, revision["application_id"]),
-    )
+    keyboard = keyboards.admin_revision_card_keyboard(revision_id, revision["application_id"])
+    return "\n".join(lines), revision, keyboard
+
+
+async def _open_revision_card(target, revision_id: int, repo: Repo) -> None:
+    revision = await repo.revisions.get(revision_id)
+    if revision is None:
+        await target.answer("Правка не найдена.")
+        return
+
+    if revision["status"] == REVISION_STATUS_NEW:
+        await repo.revisions.update_status(revision_id, REVISION_STATUS_VIEWED)
+
+    text, _revision, keyboard = await _build_revision_card_text(revision_id, repo)
+    await target.answer(text, reply_markup=keyboard)
 
 
 @router.callback_query(F.data.regexp(r"^adm:rev:\d+$"))
@@ -560,5 +602,9 @@ async def cb_revision_status_action(callback: CallbackQuery, is_admin: bool, rep
             except Exception:
                 pass
 
-    await _open_revision_card(callback.message, revision_id, repo)
+    text, _revision, keyboard = await _build_revision_card_text(revision_id, repo)
+    try:
+        await callback.message.edit_text(text, reply_markup=keyboard)
+    except Exception:
+        await _open_revision_card(callback.message, revision_id, repo)
     await callback.answer("Статус обновлён")
